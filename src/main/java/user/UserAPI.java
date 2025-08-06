@@ -1,7 +1,9 @@
 package user;
-import url.BaseUrl;
+
 import io.qameta.allure.Step;
 import io.restassured.response.Response;
+import url.BaseUrl;
+
 import static io.restassured.RestAssured.given;
 
 public class UserAPI extends BaseUrl {
@@ -35,42 +37,52 @@ public class UserAPI extends BaseUrl {
     @Step("Send POST request to /api/v1/logout")
     public Response logoutUserRequest(User user) {
         setUrl();
-        String refreshToken = loginUserRequest(user).then().extract().path("token");
-        if (refreshToken != null) {
-            return given()
-                    .header("Content-type", "application/json")
-                    .body("{\n" +
-                            "\"token\": \""+ refreshToken + "\"}")
-                    .post(LOGOUT_USER_PATH);
-        }
+        String refreshToken = loginUserRequest(user).then().extract().path("refreshToken");
         return given()
+                .header("Content-type", "application/json")
+                .body(new LogoutRequest(refreshToken))
                 .post(LOGOUT_USER_PATH);
     }
 
-    @Step("Send DELETE request to /api/auth/register")
-    public void deleteUserRequest(User user) {
+    @Step("Send DELETE request to /api/auth/user")
+    public void deleteUserRequest(String accessToken) {
         setUrl();
-        String accessToken = loginUserRequest(user).then().extract().path("accessToken");
-        if (accessToken != null) {
-            given()
-                    .header("Authorization", accessToken)
-                    .delete(DELETE_USER_PATH);
-            return;
-        }
         given()
+                .header("Authorization", accessToken)
                 .delete(DELETE_USER_PATH);
     }
 
-    @Step("Send PATCH request to /api/auth/register")
-    public Response updateUserRequest(String accessToken,User user) {
-        setUrl();
-        return  given()
-                    .header("Authorization", accessToken)
-                    .header("Content-type", "application/json")
-                    .body(user)
-                    .patch(PATCH_USER_PATH);
-
+    @Deprecated
+    public void deleteUserRequest(User user) {
+        try {
+            String accessToken = loginUserRequest(user).then().extract().path("accessToken");
+            if (accessToken != null) {
+                deleteUserRequest(accessToken);
+            }
+        } catch (Exception e) {
+            System.out.println("Failed to delete user: " + e.getMessage());
+        }
     }
 
-}
+    @Step("Send PATCH request to /api/auth/user")
+    public Response updateUserRequest(String accessToken, User user) {
+        setUrl();
+        return given()
+                .header("Authorization", accessToken)
+                .header("Content-type", "application/json")
+                .body(user)
+                .patch(PATCH_USER_PATH);
+    }
 
+    private static class LogoutRequest {
+        private final String token;
+
+        public LogoutRequest(String token) {
+            this.token = token;
+        }
+
+        public String getToken() {
+            return token;
+        }
+    }
+}

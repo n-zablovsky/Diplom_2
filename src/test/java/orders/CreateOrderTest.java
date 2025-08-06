@@ -1,8 +1,10 @@
 package orders;
 
 import ingredients.IngredientsAPI;
+import io.qameta.allure.Description;
 import io.qameta.allure.junit4.DisplayName;
 import io.restassured.response.Response;
+import net.datafaker.Faker;
 import order.Order;
 import order.OrderAPI;
 import org.junit.After;
@@ -14,28 +16,41 @@ import user.UserAPI;
 import java.util.List;
 
 import static constants.Messages.*;
+import static org.apache.http.HttpStatus.*;
 import static org.junit.Assert.*;
 
 public class CreateOrderTest {
 
-    OrderAPI orderAPI = new OrderAPI();
-    UserAPI userAPI = new UserAPI();
-    IngredientsAPI ingredientsAPI = new IngredientsAPI();
-
+    private final Faker faker = new Faker();
+    private OrderAPI orderAPI = new OrderAPI();
+    private UserAPI userAPI = new UserAPI();
+    private IngredientsAPI ingredientsAPI = new IngredientsAPI();
     private Order order;
-
-    User user = new User("PetFed@email.com","Пётр","123456789");
+    private User user;
+    private String accessToken;
 
     @Before
-    public void createUser(){
+    public void setUp() {
+        user = new User(
+                faker.internet().emailAddress(),
+                faker.name().fullName(),
+                faker.internet().password(8, 12)
+        );
         userAPI.createUserRequest(user);
         order = new Order();
+        accessToken = userAPI.loginUserRequest(user)
+                .then()
+                .extract()
+                .path("accessToken");
     }
 
-    public void setIngredientsList(){
-        List<String> ingredients = ingredientsAPI.getIngredientsRequest().then().assertThat().statusCode(200)
-                .extract().path("data._id");
-        List <String> ingredientsList = order.getIngredients();
+    private void setIngredientsList() {
+        List<String> ingredients = ingredientsAPI.getIngredientsRequest()
+                .then()
+                .statusCode(SC_OK)
+                .extract()
+                .path("data._id");
+        List<String> ingredientsList = order.getIngredients();
         ingredientsList.add(ingredients.get(0));
         ingredientsList.add(ingredients.get(2));
         ingredientsList.add(ingredients.get(4));
@@ -45,20 +60,14 @@ public class CreateOrderTest {
 
     @Test
     @DisplayName("Создание заказа с ингредиентами авторизованным пользователем")
+    @Description("Проверка успешного создания заказа авторизованным пользователем с валидными ингредиентами")
     public void createOrderSuccessfulTest() {
         setIngredientsList();
-        String accessToken =  userAPI.loginUserRequest(user)
-                .then()
-                .assertThat().statusCode(200)
-                .extract()
-                .path("accessToken");
-
-       Response response = orderAPI.createOrderRequest(accessToken, order);
+        Response response = orderAPI.createOrderRequest(accessToken, order);
 
         boolean orderResponse = response
                 .then()
-                .assertThat()
-                .statusCode(200)
+                .statusCode(SC_OK)
                 .extract()
                 .path("success");
 
@@ -73,14 +82,14 @@ public class CreateOrderTest {
 
     @Test
     @DisplayName("Создание заказа с ингредиентами неавторизованным пользователем")
+    @Description("Проверка создания заказа неавторизованным пользователем с валидными ингредиентами")
     public void createOrderUnauthorizedTest() {
         setIngredientsList();
         Response response = orderAPI.createOrderRequest("", order);
 
         boolean orderResponse = response
                 .then()
-                .assertThat()
-                .statusCode(200)
+                .statusCode(SC_OK)
                 .extract()
                 .path("success");
 
@@ -95,19 +104,13 @@ public class CreateOrderTest {
 
     @Test
     @DisplayName("Создание заказа без ингредиентов")
+    @Description("Проверка попытки создания заказа без указания ингредиентов")
     public void createOrderWoIngredientsTest() {
-        String accessToken =  userAPI.loginUserRequest(user)
-                .then()
-                .assertThat().statusCode(200)
-                .extract()
-                .path("accessToken");
-
         Response response = orderAPI.createOrderRequest(accessToken, order);
 
         boolean orderResponse = response
                 .then()
-                .assertThat()
-                .statusCode(400)
+                .statusCode(SC_BAD_REQUEST)
                 .extract()
                 .path("success");
 
@@ -122,26 +125,24 @@ public class CreateOrderTest {
 
     @Test
     @DisplayName("Создание заказа с некорректными ингредиентами")
+    @Description("Проверка попытки создания заказа с невалидными ингредиентами")
     public void createOrderWrongIngredientsTest() {
-        String accessToken =  userAPI.loginUserRequest(user)
+        List<String> ingredients = ingredientsAPI.getIngredientsRequest()
                 .then()
-                .assertThat().statusCode(200)
+                .statusCode(SC_OK)
                 .extract()
-                .path("accessToken");
-
-        List<String> ingredients = ingredientsAPI.getIngredientsRequest().then().assertThat().statusCode(200)
-                .extract().path("data._id");
-        List <String> ingredientsList = order.getIngredients();
+                .path("data._id");
+        List<String> ingredientsList = order.getIngredients();
         ingredientsList.add(ingredients.get(0).replaceAll("0", "X"));
         ingredientsList.add(ingredients.get(1).replaceAll("f", "X"));
 
-        Response response = orderAPI.createOrderRequest(accessToken, order);
-        response.then().assertThat().statusCode(500);
-
+        orderAPI.createOrderRequest(accessToken, order)
+                .then()
+                .statusCode(SC_INTERNAL_SERVER_ERROR);
     }
 
     @After
-    public void deleteUser() {
+    public void tearDown() {
         userAPI.deleteUserRequest(user);
     }
 }

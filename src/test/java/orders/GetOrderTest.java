@@ -1,8 +1,10 @@
 package orders;
 
 import ingredients.IngredientsAPI;
+import io.qameta.allure.Description;
 import io.qameta.allure.junit4.DisplayName;
 import io.restassured.response.Response;
+import net.datafaker.Faker;
 import order.Order;
 import order.OrderAPI;
 import org.junit.After;
@@ -14,29 +16,43 @@ import user.UserAPI;
 import java.util.List;
 
 import static constants.Messages.RESPONSE_BODY_UNAUTHORIZED;
+import static org.apache.http.HttpStatus.*;
 import static org.hamcrest.CoreMatchers.equalTo;
 import static org.junit.Assert.*;
 
 public class GetOrderTest {
 
-    OrderAPI orderAPI = new OrderAPI();
-    UserAPI userAPI = new UserAPI();
-    IngredientsAPI ingredientsAPI = new IngredientsAPI();
-
+    private final Faker faker = new Faker();
+    private OrderAPI orderAPI = new OrderAPI();
+    private UserAPI userAPI = new UserAPI();
+    private IngredientsAPI ingredientsAPI = new IngredientsAPI();
     private Order order;
-
-    User user = new User("PetFed@email.com","Пётр","123456789");
+    private User user;
+    private String accessToken;
 
     @Before
-    public void createUser(){
+    public void setUp() {
+        user = new User(
+                faker.internet().emailAddress(),
+                faker.name().fullName(),
+                faker.internet().password(8, 12)
+        );
         userAPI.createUserRequest(user);
         order = new Order();
+        accessToken = userAPI.loginUserRequest(user)
+                .then()
+                .statusCode(SC_OK)
+                .extract()
+                .path("accessToken");
     }
 
-    public void setIngredientsList(){
-        List<String> ingredients = ingredientsAPI.getIngredientsRequest().then().assertThat().statusCode(200)
-                .extract().path("data._id");
-        List <String> ingredientsList = order.getIngredients();
+    private void setIngredientsList() {
+        List<String> ingredients = ingredientsAPI.getIngredientsRequest()
+                .then()
+                .statusCode(SC_OK)
+                .extract()
+                .path("data._id");
+        List<String> ingredientsList = order.getIngredients();
         ingredientsList.add(ingredients.get(1));
         ingredientsList.add(ingredients.get(3));
         ingredientsList.add(ingredients.get(5));
@@ -44,36 +60,32 @@ public class GetOrderTest {
 
     @Test
     @DisplayName("Получение заказов авторизованным пользователем")
+    @Description("Проверка получения списка заказов авторизованным пользователем")
     public void getOrderByAuthorizedUserTest() {
         setIngredientsList();
-        String accessToken =  userAPI.loginUserRequest(user)
-                .then()
-                .assertThat().statusCode(200)
-                .extract()
-                .path("accessToken");
-
-       orderAPI.createOrderRequest(accessToken, order);
+        orderAPI.createOrderRequest(accessToken, order);
 
         Response getOrdersResponse = orderAPI.getOrderRequest(accessToken);
-        getOrdersResponse.then().assertThat().statusCode(200);
+        getOrdersResponse.then().statusCode(SC_OK);
         boolean isSuccess = getOrdersResponse.then().extract().path("success");
         assertTrue(isSuccess);
     }
 
     @Test
     @DisplayName("Получение заказов неавторизованным пользователем")
+    @Description("Проверка попытки получения списка заказов неавторизованным пользователем")
     public void getOrderByUnauthorizedUserTest() {
         setIngredientsList();
         Response getOrdersResponse = orderAPI.getOrderRequest("");
-        getOrdersResponse.then().assertThat().statusCode(401);
-        getOrdersResponse.then().body(equalTo(RESPONSE_BODY_UNAUTHORIZED));
+        getOrdersResponse.then()
+                .statusCode(SC_UNAUTHORIZED)
+                .body(equalTo(RESPONSE_BODY_UNAUTHORIZED));
         boolean isSuccess = getOrdersResponse.then().extract().path("success");
         assertFalse(isSuccess);
     }
 
     @After
-    public void deleteUser() {
+    public void tearDown() {
         userAPI.deleteUserRequest(user);
     }
-
 }

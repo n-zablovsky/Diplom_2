@@ -6,6 +6,7 @@ import org.junit.Test;
 
 import static constants.Messages.RESPONSE_BODY_REQUIRED_FIELD_IS_EMPTY;
 import static constants.Messages.RESPONSE_BODY_USER_EXISTS;
+import static org.apache.http.HttpStatus.*;
 import static org.hamcrest.CoreMatchers.equalTo;
 
 public class CreateUserTest {
@@ -20,7 +21,7 @@ public class CreateUserTest {
     @DisplayName("Создание пользователя, успешный запрос")
     public void createUserSuccessfulTest() {
         userAPI.createUserRequest(user).then()
-                .assertThat().statusCode(200)
+                .assertThat().statusCode(SC_OK)
                 .extract()
                 .path("success", String.valueOf(equalTo("true")));
     }
@@ -29,9 +30,9 @@ public class CreateUserTest {
     @DisplayName("Создание пользователя, который уже зарегистрирован")
     public void createUserDuplicateTest() {
         userAPI.createUserRequest(user).then()
-                .assertThat().statusCode(200);
+                .assertThat().statusCode(SC_OK);
         userAPI.createUserRequest(user).then()
-                .assertThat().statusCode(403)
+                .assertThat().statusCode(SC_FORBIDDEN)
                 .and()
                 .body(equalTo(RESPONSE_BODY_USER_EXISTS));
     }
@@ -40,7 +41,7 @@ public class CreateUserTest {
     @DisplayName("Создание пользователя, не заполнен email")
     public void createUserWoEmailTest() {
         userAPI.createUserRequest(userWoEmail).then()
-                .assertThat().statusCode(403)
+                .assertThat().statusCode(SC_FORBIDDEN)
                 .and()
                 .body(equalTo(RESPONSE_BODY_REQUIRED_FIELD_IS_EMPTY));
     }
@@ -49,7 +50,7 @@ public class CreateUserTest {
     @DisplayName("Создание пользователя, не заполнен password")
     public void createUserWoPasswordTest() {
         userAPI.createUserRequest(userWoPassword).then()
-                .assertThat().statusCode(403)
+                .assertThat().statusCode(SC_FORBIDDEN)
                 .and()
                 .body(equalTo(RESPONSE_BODY_REQUIRED_FIELD_IS_EMPTY));
     }
@@ -58,14 +59,28 @@ public class CreateUserTest {
     @DisplayName("Создание пользователя, не заполнен name")
     public void createUserWoNameTest() {
         userAPI.createUserRequest(userWoName).then()
-                .assertThat().statusCode(403)
+                .assertThat().statusCode(SC_FORBIDDEN)
                 .and()
                 .body(equalTo(RESPONSE_BODY_REQUIRED_FIELD_IS_EMPTY));
     }
 
     @After
     public void deleteUser() {
-            userAPI.deleteUserRequest(user);
-    }
+        try {
+            // Удаляем только успешно созданного пользователя
+            if (user.getEmail() != null && !user.getEmail().isEmpty()
+                    && user.getPassword() != null && !user.getPassword().isEmpty()) {
+                String accessToken = userAPI.loginUserRequest(user)
+                        .then()
+                        .extract()
+                        .path("accessToken");
 
+                if (accessToken != null) {
+                    userAPI.deleteUserRequest(accessToken);
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("Failed to delete user: " + e.getMessage());
+        }
+    }
 }
